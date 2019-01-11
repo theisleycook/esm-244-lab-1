@@ -1,0 +1,167 @@
+---
+title: "Lab 1"
+author: "Taylor"
+date: "1/10/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Objectives:
+
+- basic review of data wrangling
+- intro to spatial data in R with sf
+- intro to shiny apps
+
+1. Attach packages
+
+```{r load_packages, include = FALSE}
+
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(tmap)
+
+```
+
+2. Review: reading, exploring, wrangling and visualizing data
+
+1. Read in the data
+```{r data}
+
+wine <- read_csv('wine_data.csv')
+
+# Let's prioritize price and points to price ratio. And focus on Pinot Noir.
+
+```
+
+b. Wrangling
+```{r wrangle}
+
+wine_new <- wine %>% #command shift M
+  select(country, province, winery, region_1, points, price) %>% 
+    # select is for columns; filter is for rows
+  rename(state = province) %>% 
+  filter(state == 'California' | state == 'Oregon' | state == 'Washington') %>% 
+    # single = sets equal; double == looks for a match
+  mutate(ppd = points/price) %>% 
+    # ppd = points per dollar
+  arrange (-ppd) 
+    # decreasing value
+
+```
+
+Let's say we want to summarize characteristics of wine based on states. We could create three separate data sets, but... we could also make R do it, which is way easier. SO:
+
+c. Use group_by() and summarize() to find summary statistics by group.
+```{r summary_stats}
+
+wine_summary <- wine_new %>% 
+  group_by(state) %>% 
+    # this will not look ANY DIFFERENT -- the difference is just in R's brain! 
+  summarize(
+    mean_ppd = mean(ppd, na.rm = TRUE), #please remove any NA values
+    max_ppd = max(ppd, na.rm = TRUE)
+  )
+
+```
+
+MEAN: 
+California: 2.428557
+Oregon: 2.419863
+Washington: 3.345340 <- WA is awesome! BUT 
+
+MAX:
+California: 12 <- max is in CA. Flipflop, baybee.
+Oregon: 9
+Washington: 7
+
+Nice. BUT HOLD UP -- DON'T FORGET TO LOOK AT YOUR DATA!
+
+d. A few GG Graphics.
+
+First: histograms of price per dollar values for each state.
+```{r histograms}
+
+wine_hist <- ggplot(wine_new, aes(x = ppd)) +
+  geom_histogram(aes(fill = state)) +
+    # so that looks pretty good, but WA is too tiny, so let's split it up
+  facet_wrap(~state, scales = 'free')
+    # OK, so... splits it but still a bad scale for WA. Overide scales.
+
+wine_hist
+```
+
+New graph: scatterplot graph of price v points, with color determined by state, adding a linear model trendline on top of it.
+
+```{r scatterplot}
+
+wine_points <- ggplot(wine_new, aes(x = price, y = points)) +
+  geom_point(aes(color=state), alpha = 0.5) + 
+    # POINTS are COLOR, BARS are FILL
+  geom_smooth(color = 'black', method = 'lm', se = FALSE) +
+    # Easy way to add linear model!!!! Look into this!
+  scale_color_manual(values = c('royalblue','mediumorchid1','orange')) +
+  theme_classic() + # look at different packages and themes
+  facet_wrap(~state)
+
+wine_points
+
+```
+
+2. California counties (spatial data) using SF
+
+```{r sf_start}
+
+ca_counties <- st_read(dsn = ".", layer = 'CA_Counties_TIGER2016')
+
+# there are packages that pull data directly from census, etc.
+
+# plot(ca_counties) 
+
+## WOW COOL!
+
+### figure out how to insert images in GitHub
+
+# here's a simplified one --
+
+ca_land <- ca_counties %>% 
+  select(NAME, ALAND)
+
+# NOW we are going to merge population income data.
+
+ca_pop_inc <- read_csv('ca_pop_inc.csv') %>% 
+  # OK so now we need to merge them, but counties are called NAME in ca_counties and COUNTY in 
+  # ca_pop_inc. We gotta rename. REMEMBER it's NEW = OLD
+  rename(NAME = COUNTY)
+
+ca_df <- full_join(ca_land, ca_pop_inc) %>% 
+  select(NAME, MedFamilyIncome) # but the geoms are sticky because SF is awesome.
+
+```
+
+d. Use geom_sf to make a map in ggplot
+
+```{r mapping1}
+
+ca_income <- ggplot(ca_df) +
+  geom_sf(aes(fill = MedFamilyIncome)) +
+  theme_classic()
+
+ca_income
+```
+
+```{r leaflet}
+
+# gotta change the data to match Leaflet
+
+ca_df_transform <- st_transform(ca_df, crs = 4326)
+
+leaflet(ca_df_transform) %>%
+  addTiles() %>% 
+  addPolygons()
+
+```
+
